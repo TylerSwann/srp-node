@@ -99,7 +99,7 @@ export class SRPServerSession
     private readonly group: SRPGroup;
     private readonly s: BinaryNumber;
     private readonly v: BinaryNumber;
-    private preMasterKey: BinaryNumber | null = null;
+    public preMasterKey: string | null = null;
     private readonly publicValue: string;
     public readonly model: SRPServerModel;
     private readonly IS_SRP_SERVER_SESSION = "IS_SRP_SERVER_SESSION";
@@ -122,30 +122,18 @@ export class SRPServerSession
         };
     }
 
-    setClientPublicValue(clientPubValue: string): Promise<void>
-    {
-        return new Promise((resolve, reject) => {
-            try
-            {
-                const pms = SRP.makeServerPreMasterSecret(new BinaryNumber(clientPubValue), this.v, this.s, this.group, this.b);
-                this.preMasterKey = pms.S;
-                resolve();
-            }
-            catch (e) { reject(e); }
-        });
-    }
-
     authenticateClient(bundle: SRPAuthenticationBundle): Promise<boolean>
     {
         return new Promise((resolve) => {
-            const next = this.preMasterKey == null ? this.setClientPublicValue(bundle.publicValue) : Promise.resolve();
-            next
-                .then(() => {
-                    const decrypted = SRP.decrypt(this.preMasterKey!!, bundle.cipherText);
-                    const checksum = HASH(decrypted, this.group.hash).hex();
-                    resolve(checksum === bundle.checksum);
-                })
-                .catch(reason => resolve(false));
+            try
+            {
+                const pms = SRP.makeServerPreMasterSecret(new BinaryNumber(bundle.publicValue), this.v, this.s, this.group, this.b);
+                this.preMasterKey = pms.S.hex();
+                const decrypted = SRP.decrypt(this.preMasterKey, bundle.cipherText);
+                const checksum = HASH(decrypted, this.group.hash).hex();
+                resolve(checksum === bundle.checksum);
+            }
+            catch (e) { resolve(false); }
         });
     }
 
