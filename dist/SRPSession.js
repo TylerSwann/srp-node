@@ -44,10 +44,43 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SRPServerSession = void 0;
+exports.SRPServerSession = exports.SRPClientSession = void 0;
 const SRP_1 = __importStar(require("./SRP"));
-class SRPClientSession {
+class SRPSessionImpl {
+    encrypt(data) {
+        return new Promise((resolve, reject) => {
+            if (this.preMasterKey == null) {
+                reject("SRPSessionImpl: Cannot encrypt data using null preMasterKey!");
+                return;
+            }
+            try {
+                const cipherText = SRP_1.default.encrypt(this.preMasterKey, data);
+                resolve(cipherText);
+            }
+            catch (e) {
+                reject(e);
+            }
+        });
+    }
+    decrypt(data) {
+        return new Promise((resolve, reject) => {
+            if (this.preMasterKey == null) {
+                reject("SRPSessionImpl: Cannot decrypt data using null preMasterKey!\n Ensure client has been properly authenticated!");
+                return;
+            }
+            try {
+                const plainText = SRP_1.default.decrypt(this.preMasterKey, data);
+                resolve(plainText);
+            }
+            catch (e) {
+                reject(e);
+            }
+        });
+    }
+}
+class SRPClientSession extends SRPSessionImpl {
     constructor(password, model) {
+        super();
         this.IS_SRP_CLIENT_SESSION = "IS_SRP_CLIENT_SESSION";
         this.I = model.username;
         this.P = password;
@@ -65,8 +98,6 @@ class SRPClientSession {
             try {
                 const secret = SRP_1.default.random(32).hex();
                 const cipherText = SRP_1.default.encrypt(this.preMasterKey, secret);
-                console.log(cipherText);
-                console.log((typeof cipherText));
                 const checksum = SRP_1.HASH(secret, this.group.hash).hex();
                 const bundle = {
                     username: this.I,
@@ -85,8 +116,10 @@ class SRPClientSession {
         return typeof obj === "object" && obj.hasOwnProperty("IS_SRP_CLIENT_SESSION") && obj.IS_SRP_CLIENT_SESSION === "IS_SRP_CLIENT_SESSION";
     }
 }
-class SRPServerSession {
+exports.SRPClientSession = SRPClientSession;
+class SRPServerSession extends SRPSessionImpl {
     constructor(model) {
+        super();
         this.preMasterKey = null;
         this.IS_SRP_SERVER_SESSION = "IS_SRP_SERVER_SESSION";
         this.I = model.username;
@@ -127,12 +160,12 @@ class SRPSession {
     static newClientSession(password, model) {
         return new Promise((resolve, reject) => {
             try {
-                if (this.sessions.has(model.username)) {
+                if (this.clientSessions.has(model.username)) {
                     reject(`SRP client session for user "${model.username}" already exists. Please destroy session first!`);
                     return;
                 }
                 const client = new SRPClientSession(password, model);
-                SRPSession.sessions.set(model.username, client);
+                SRPSession.clientSessions.set(model.username, client);
                 resolve(client);
             }
             catch (e) {
@@ -142,33 +175,33 @@ class SRPSession {
     }
     static newServerSession(model) {
         return new Promise((resolve, reject) => {
-            if (this.sessions.has(model.username)) {
+            if (this.serverSessions.has(model.username)) {
                 reject(`SRP server session for user "${model.username}" already exists. Please destroy session first!`);
                 return;
             }
             const server = new SRPServerSession(model);
-            SRPSession.sessions.set(model.username, server);
+            SRPSession.serverSessions.set(model.username, server);
             resolve(server);
         });
     }
     static resumeServerSession(username) {
         return new Promise((resolve, reject) => {
-            if (!this.sessions.has(username))
+            if (!this.serverSessions.has(username))
                 reject(`Server session with user '${username}' not found`);
-            else if (!SRPServerSession.isSRPServerSession(this.sessions.get(username)))
+            else if (!SRPServerSession.isSRPServerSession(this.serverSessions.get(username)))
                 reject(`Server session with user '${username}' is client session!`);
             else
-                resolve(this.sessions.get(username));
+                resolve(this.serverSessions.get(username));
         });
     }
     static resumeClientSession(username) {
         return new Promise((resolve, reject) => {
-            if (!this.sessions.has(username))
+            if (!this.clientSessions.has(username))
                 reject(`Client session with user '${username}' not found`);
-            else if (!SRPClientSession.isSRPClientSession(this.sessions.get(username)))
+            else if (!SRPClientSession.isSRPClientSession(this.clientSessions.get(username)))
                 reject(`Client session with user '${username}' is server session!`);
             else
-                resolve(this.sessions.get(username));
+                resolve(this.clientSessions.get(username));
         });
     }
     static registerNewClient(username, password, policy) {
@@ -200,13 +233,21 @@ class SRPSession {
             hash: "sha256"
         };
     }
-    static hasSession(username) {
-        return this.sessions.has(username);
+    static destroyClientSession(username) {
+        if (this.clientSessions.has(username))
+            this.clientSessions.delete(username);
     }
-    static destroySession(username) {
-        if (this.sessions.has(username))
-            this.sessions.delete(username);
+    static destroyServerSession(username) {
+        if (this.serverSessions.has(username))
+            this.serverSessions.delete(username);
+    }
+    static hasServerSession(username) {
+        return this.serverSessions.has(username);
+    }
+    static hasClientSession(username) {
+        return this.clientSessions.has(username);
     }
 }
-SRPSession.sessions = new Map();
+SRPSession.clientSessions = new Map();
+SRPSession.serverSessions = new Map();
 exports.default = SRPSession;

@@ -25,7 +25,7 @@
  */
 
 
-import sjcl, { SjclCipherEncrypted } from '../lib/sjcl';
+import sjcl from '../lib/sjcl';
 import { Buffer } from 'buffer/';
 import { BigNumber } from "bignumber.js";
 
@@ -37,7 +37,6 @@ type BinaryValue = string | Buffer | number | BigNumber | BinaryNumber | Array<n
 export class BinaryNumber
 {
     private readonly value: BigNumber;
-    // private readonly bnValue: sjcl.BigNumber;
     private readonly IS_BINARY_NUMBER = true;
 
     constructor(value: BinaryValue)
@@ -500,7 +499,7 @@ function makeClientPreMasterSecret(I: string, P: string, Ng: SRPGroup, s: Binary
     };
 }
 
-function encrypt(key: string | BinaryNumber, data: string): SjclCipherEncrypted
+function encrypt(key: string | BinaryNumber, data: string): string
 {
     const k = (typeof key === "string") ? key : key.hex();
     const iv = sjcl.random.randomWords(4, 0);
@@ -512,10 +511,10 @@ function encrypt(key: string | BinaryNumber, data: string): SjclCipherEncrypted
         ks: 256
     };
     const encrypted = sjcl.encrypt(k, data, params);
-    return encrypted;
+    return (encrypted as any) as string;
 }
 
-function decrypt(key: string | BinaryNumber, cipherEncrypted: SjclCipherEncrypted): string
+function decrypt(key: string | BinaryNumber, cipherEncrypted: string): string
 {
     const k = (typeof key === "string") ? key : key.hex();
     return sjcl.decrypt(k, cipherEncrypted);

@@ -24,8 +24,7 @@
  * on 10/16/2020 at 3:19 PM
  */
 
-import SRPSession, { SRPAuthenticationBundle, SRPClientModel }  from "srp-node";
-import express from 'express';
+import SRPSession, { SRPAuthenticationBundle, SRPClientModel, SRPClientSession, SRPServerModel, SRPServerSession } from "srp-node";
 
 
 /***********************************
@@ -34,43 +33,61 @@ import express from 'express';
  *                                 *
  ***********************************/
 
-function register(username: string, password: string)
+function clientRegistration(username: string, password: string): Promise<void>
 {
-    // Register client.
-    SRPSession.registerNewClient(username, password)
-        .then(clientModel => {
-            // Save clientModel server side
-            const params = {
-                method: "PUT",
-                body: JSON.stringify(clientModel),
-                headers: {"Content-Type": "application/json"}
-            };
-            return fetch("/register", params)
+    return new Promise((resolve) => {
+        console.log(`Client: Registering new user "${username}"`);
+        // Register the client. This needs to be performed anytime a new user is created or their password is changed
+        SRPSession.registerNewClient(username, password)
+            .then((clientModel: SRPClientModel) => {
+                console.log(`Client: Submitting SRPClientModel to server for new user "${username}"`);
+                // Submit "clientModel" to server and save to database
+                registerClient(username, clientModel);
+                resolve();
+            })
+            .catch(reason => console.log(reason));
+    });
+}
+
+function clientAuthentication(username: string, password: string)
+{
+    console.log(`Client: Requesting SRPServerModel from server for user "${username}"`);
+    // Get the SRPServerModel from the server
+    getServerModel(username)
+        .then((serverModel: SRPServerModel) => {
+            console.log(`Client: Starting a new client session for user "${username}"`);
+            // Start a new client session
+            return SRPSession.newClientSession(password, serverModel);
+        })
+        .then((clientSession: SRPClientSession) => {
+            console.log(`Client: Creating an SRPAuthenticationBundle for user "${username}"`);
+            // Create an SRPAuthenticationBundle
+            return clientSession.makeAuthenticationBundle();
+        })
+        .then((authBundle: SRPAuthenticationBundle) => {
+            console.log(`Client: Submitting an SRPAuthenticationBundle to server`);
+            // Submit bundle to server
+            authenticateClient(authBundle);
         })
         .catch(reason => console.log(reason));
 }
 
-function authenticate(username: string, password: string)
+function readEncryptedMessage(cipherText: string, username: string)
 {
-    // Get SRPServerModel from server, get password from user
-    fetch(`/get-server-model/${username}`)
-        .then(res => res.json())
-        .then(clientModel => {
-            return SRPSession.newClientSession(password, clientModel);
+    console.log(`Client: Resuming previous client session`);
+    let clientSession: SRPClientSession;
+    SRPSession.resumeClientSession(username)
+        .then(session => {
+            clientSession = session;
+            console.log(`Client: Decrypting message from server`);
+            return clientSession.decrypt(cipherText);
         })
-        .then(clientSession => {
-            // Client side: Provide server with authBundle.
-            const authBundle = clientSession.makeAuthenticationBundle();
-            const params = {
-                method: "POST",
-                body: JSON.stringify(authBundle),
-                headers: {"Content-Type": "application/json"}
-            };
-            return fetch("/auth", params);
+        .then(msg => {
+            console.log("\nClient: Decrypted message:");
+            console.log(msg);
         })
         .catch(reason => console.log(reason));
 }
-
 
 /***********************************
  *                                 *
@@ -78,45 +95,71 @@ function authenticate(username: string, password: string)
  *                                 *
  ***********************************/
 
-const server = express();
+const userDB: Map<string, SRPClientModel> = new Map();
 
-const userDB = new Map<string, SRPClientModel>();
+function registerClient(username: string, clientModel: SRPClientModel)
+{
+    console.log(`Server: Saving user "${username}" to database`);
+    userDB.set(username, clientModel);
+}
 
-server.put("/register", express.json(), (req, res) => {
-    const clientModel: SRPClientModel = req.body;
-    if (userDB.has(clientModel.username))
-        res.status(401).send("User already exists!");
-    else
-        userDB.set(clientModel.username, clientModel);
-});
-
-server.get("/get-server-model/:username", (req, res) => {
-    const username = req.params.username;
-    if (!userDB.has(username))
-        res.status(404).send("User not found!");
-    else
-    {
-        const clientModel = userDB.get(username);
-        SRPSession.newServerSession(clientModel!!)
-            .then(serverSession => {
-                res.status(200).send(JSON.stringify(serverSession.model));
+function getServerModel(username: string): Promise<SRPServerModel>
+{
+    console.log(`Server: Client requests server model for user "${username}"`);
+    return new Promise((resolve, reject) => {
+        if (!userDB.has(username))
+        {
+            reject(`User "${username}" not found!`);
+            return;
+        }
+        console.log(`Server: Starting new server session for user "${username}"`);
+        // Start a new session. If a previous session has already been started, it should be destroyed before making another session
+        SRPSession.newServerSession(userDB.get(username)!!)
+            .then((serverSession: SRPServerSession) => {
+                resolve(serverSession.model);
             })
-            .catch(reason => res.status(500).send(reason));
-    }
-});
+            .catch(reason => reject(reason));
+    });
+}
 
-server.post("/auth", (req, res) => {
-    const authBundle: SRPAuthenticationBundle = req.body;
+function authenticateClient(authBundle: SRPAuthenticationBundle)
+{
+    let serverSession: SRPServerSession;
+    console.log(`Server: Resuming server session for user "${authBundle.username}"`);
     SRPSession.resumeServerSession(authBundle.username)
-        .then(serverSession => {
+        .then((session: SRPServerSession) => {
+            serverSession = session;
+            console.log(`Server: Authenticating user "${authBundle.username}"`);
             return serverSession.authenticateClient(authBundle);
         })
         .then(authenticated => {
             if (authenticated)
-                res.status(200).send("Access Granted!");
+            {
+                console.log("\nServer: Access Granted! :)");
+                serverSession.encrypt("Hello Client!")
+                    .then((cipherText: string) => {
+                        console.log("\nServer: Encrypted message:");
+                        console.log(JSON.parse((cipherText)));
+                        readEncryptedMessage(cipherText, authBundle.username);
+                    })
+                    .catch(reason => console.log(reason));
+            }
             else
-                res.status(400).send("Access DENIED!");
+                console.log("Server: Access DENIED! :(");
         })
-        .catch(reason => res.status(500).send(reason));
-});
+        .catch(reason => console.log(reason));
+}
 
+
+function start()
+{
+    const username = "admin";
+    const password = "password123";
+    clientRegistration(username, password)
+        .then(() => {
+            clientAuthentication(username, password);
+        })
+        .catch(reason => console.log(reason));
+}
+
+start();

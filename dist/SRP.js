@@ -35,7 +35,6 @@ const bignumber_js_1 = require("bignumber.js");
 const isNode = (typeof window == "undefined") && (typeof process != "undefined") && process != null;
 class BinaryNumber {
     constructor(value) {
-        // private readonly bnValue: sjcl.BigNumber;
         this.IS_BINARY_NUMBER = true;
         this.value = BinaryNumber.parse(value);
     }

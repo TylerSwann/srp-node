@@ -29,7 +29,7 @@
 const React = require( "react");
 const express = require("express");
 const server = new express();
-const SRPSession = require("secure-remote-password").default;
+const SRPSession = require("srp-node").default;
 
 /**
  *
@@ -79,7 +79,7 @@ server.get("/api/auth-params/:username", (req, res) => {
     else
     {
         const model = users.get(username);
-        SRPSession.destroySession(username);
+        SRPSession.destroyServerSession(username);
         SRPSession.newServerSession(model)
             .then(serverSession => {
                 res.status(200).send(JSON.stringify(serverSession.model));

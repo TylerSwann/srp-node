@@ -25,6 +25,7 @@
  */
 
 import React, { Component } from 'react';
+import OutputContainer from "./OutputContainer";
 
 
 class Form extends Component
@@ -60,9 +61,7 @@ class Form extends Component
                             </div>
                         </div>
                     </div>
-                    <pre className="output">
-                        {output == null ? "" : output.join("\n")}
-                    </pre>
+                    <OutputContainer output={output}/>
                 </div>
             </div>
         );

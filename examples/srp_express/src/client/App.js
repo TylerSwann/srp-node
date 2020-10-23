@@ -26,8 +26,9 @@
 
 import React, { Component } from 'react';
 import { BrowserRouter as Router, Switch, Route } from "react-router-dom";
+
 import Form from "./Form";
-import SRPSession from "secure-remote-password";
+import SRPSession from "srp-node";
 import Dashboard from "./Dashboard";
 
 
@@ -63,11 +64,6 @@ class App extends Component
                 <div>
                     <Switch>
                         <Route exact path={"/"}>
-                            <button>
-                                {`You are at "/"`}
-                            </button>
-                        </Route>
-                        <Route exact path={"/registration"}>
                             <Form output={output}
                                   title={"Register"}
                                   linkText={"Sign In!"}
@@ -80,7 +76,7 @@ class App extends Component
                             <Form title={"Login"}
                                   output={output}
                                   linkText={"Sign up!"}
-                                  href={"/registration"}
+                                  href={"/"}
                                   disabled={loginDisabled}
                                   linkLabel={"Don't have an account?"}
                                   onInput={(u, p) => this.login(u, p)}/>
@@ -139,7 +135,7 @@ class App extends Component
 
     login(username, password)
     {
-        SRPSession.destroySession(username);
+        SRPSession.destroyClientSession(username);
         /**
          * @type {SRPClientSession}
          */
